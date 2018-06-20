@@ -16,7 +16,8 @@
 
 InstallValue( VirtualCAS,
         rec(
-            
+            task_name := "homalg_task_",
+            proc_name := "homalg_proc",
             )
 );
 
@@ -27,6 +28,30 @@ InstallValue( VirtualCAS,
 ####################################
 
 HOMALG_IO_Singular.LaunchCAS := LaunchVirtualCAS;
+
+####################################
+#
+# global functions and variables:
+#
+####################################
+
+##
+InstallValue( VirtualCASMacrosForSingular,
+        rec(
+            
+            _CAS_name := "Singular",
+            
+            _Identifier := "VirtualCAS",
+            
+            ("!init_string_VirtualCAS") := "LIB \"tasks.lib\"",
+            
+            )
+        
+        );
+
+##
+UpdateMacrosOfCAS( VirtualCASMacrosForSingular, SingularMacros );
+UpdateMacrosOfLaunchedCASs( VirtualCASMacrosForSingular );
 
 ####################################
 #
@@ -63,10 +88,128 @@ InstallGlobalFunction( LaunchVirtualCAS,
     
 end );
 
+CreateHPCString := function( stream, process )
+  local id, parents, str, executed, graph, p, v, t, hv, wA;
+  
+  id := process!.identifier;
+  
+  parents := process!.parents;
+  
+  str := process!.string;
+  
+  executed := [ ];
+  
+  if not IsBlockingProcess( process ) and
+     Length( id ) = 1 and parents <> [ ] then
+      
+      #Print( id, "\n" );
+      
+      id := String( id[1] );
+      
+      p := VirtualCAS.proc_name;
+      v := stream!.variable_name;
+      t := VirtualCAS.task_name;
+      
+      str := Concatenation(
+                     "proc ", p, "{\n",
+                     str,
+                     "return(", v, id, ");}\n",
+                     "task ", t, id, "=", "\"", p, "\", list();\n",
+                     "startTasks(", t, id, ");\n"
+                     );
+      
+      graph := stream.ProcessGraph;
+      
+      parents := Difference( parents, graph!.parentless );
+      executed := Difference( parents, graph!.executed );
+      
+      if executed <> [ ] then
+          
+          wA := List( executed, i -> Concatenation( t, String( i ) ) );
+          wA := JoinStringsWithSeparator( wA );
+          
+          hv := List( executed, i -> Concatenation( "def ", v, String( i ), "=getResult(", t, String( i ), "); killTask(", t, String( i ), ");" ) );
+          hv := Concatenation( hv );
+          
+          str := Concatenation(
+                         "waitAllTasks(", wA, ");\n",
+                         hv, "\n",
+                         str
+                         );
+          
+      fi;
+      
+  elif not IsBlockingProcess( process ) and
+    Length( id ) > 1 and parents <> [ ] then
+      
+      graph := stream.ProcessGraph;
+      
+      parents := Difference( parents, graph!.parentless );
+      executed := Difference( parents, graph!.executed );
+      
+      if executed <> [ ] then
+          
+          t := VirtualCAS.task_name;
+          
+          wA := List( executed, i -> Concatenation( t, String( i ) ) );
+          wA := JoinStringsWithSeparator( wA );
+          
+          v := stream!.variable_name;
+          
+          hv := List( executed, i -> Concatenation( "def ", v, String( i ), "=getResult(", t, String( i ), "); killTask(", t, String( i ), ");" ) );
+          hv := Concatenation( hv );
+          
+          str := Concatenation(
+                         "waitAllTasks(", wA, ");\n",
+                         hv, "\n",
+                         str
+                         );
+
+      fi;
+      
+      Append( executed, id );
+      
+  elif IsBlockingProcess( process ) and
+    id = [ ] and parents <> [ ] then
+      
+      graph := stream.ProcessGraph;
+      
+      parents := Difference( parents, graph!.parentless );
+      executed := Difference( parents, graph!.executed );
+      
+      if executed <> [ ] then
+          
+          t := VirtualCAS.task_name;
+          
+          wA := List( executed, i -> Concatenation( t, String( i ) ) );
+          wA := JoinStringsWithSeparator( wA );
+          
+          v := stream!.variable_name;
+          
+          hv := List( executed, i -> Concatenation( "def ", v, String( i ), "=getResult(", t, String( i ), "); killTask(", t, String( i ), ");" ) );
+          hv := Concatenation( hv );
+          
+          str := Concatenation(
+                         "waitAllTasks(", wA, ");\n",
+                         hv, "\n",
+                         str
+                         );
+          
+      fi;
+      
+  fi;
+  
+  Print( str );
+  #Print( executed, "\n\n" );
+  
+  return [ str, executed ];
+  
+end;
+
 ##
 InstallGlobalFunction( SendBlockingToVirtualCAS,
   function( arg )
-    local stream, graph, process, processes, execute, p;
+    local stream, graph, process, processes, execute, p, str;
     
     if ( Length( arg ) = 2 and IsRecord( arg[1] ) and IsString( arg[2] ) ) then
         
@@ -83,12 +226,17 @@ InstallGlobalFunction( SendBlockingToVirtualCAS,
             processes := graph!.processes;
             
             execute := processes{[ graph!.processed + 1 .. Length( processes ) ]};
-            Print( Length( execute ), "\n" );
-            ViewObj( execute ); Print( "\n\n" );
+            #Print( Length( execute ), "\n" );
+            #ViewObj( execute ); Print( "\n\n" );
+            
             
             for p in execute do
                 
-                SendBlockingToCAS( stream, p!.string );
+                str := CreateHPCString( stream, p );
+                
+                SendBlockingToCAS( stream, str[1] );
+                
+                Append( graph!.executed, str[2] );
                 
             od;
             
@@ -97,7 +245,7 @@ InstallGlobalFunction( SendBlockingToVirtualCAS,
         fi;
         
     else
-        Error( "Wrong number or type of arguments." );
+        Error( "wrong number or type of arguments\n" );
     fi;
     
 end );

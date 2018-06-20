@@ -17,6 +17,14 @@ DeclareGlobalVariable( "VirtualCAS" );
 
 ####################################
 #
+# global variables:
+#
+####################################
+
+DeclareGlobalVariable( "VirtualCASMacrosForSingular" );
+
+####################################
+#
 # global functions and operations:
 #
 ####################################

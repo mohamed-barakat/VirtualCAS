@@ -91,8 +91,13 @@ InstallMethod( Add,
         [ IsProcessGraphRep, IsProcessForHomalgRep ],
         
   function( pg, p )
+    local id;
     
     Add( pg!.processes, p );
+    
+    if p!.identifier <> [ ] and p!.parents = [ ] then
+        Add( pg!.parentless, p!.identifier[1] );
+    fi;
     
 end );
 
@@ -131,7 +136,12 @@ InstallGlobalFunction( ProcessGraph,
   function( )
     local pg;
     
-    pg := rec( processed := 0, processes := [ ] );
+    pg := rec(
+              processed := 0,
+              processes := [ ],
+              parentless := [ ],
+              executed := [ ],
+              );
     
     ## Objectify
     Objectify( TheTypeProcessGraph, pg );
